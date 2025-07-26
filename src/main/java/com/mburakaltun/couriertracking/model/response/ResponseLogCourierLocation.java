@@ -9,5 +9,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResponseCourierLocation {
+public class ResponseLogCourierLocation {
+    private boolean success;
 }

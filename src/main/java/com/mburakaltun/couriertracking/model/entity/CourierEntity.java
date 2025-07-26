@@ -22,4 +22,7 @@ public class CourierEntity {
 
     @Column(name = "name", nullable = false)
     private String name;
+
+    @Column(name = "total_distance", nullable = false)
+    private Double totalDistance = 0.0;
 }

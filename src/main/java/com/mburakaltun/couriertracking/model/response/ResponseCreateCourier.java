@@ -1,4 +1,4 @@
-package com.mburakaltun.couriertracking.model.request;
+package com.mburakaltun.couriertracking.model.response;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RequestCourierTotalDistance {
-    private Long courierId;
+public class ResponseCreateCourier {
+    private Long id;
 }

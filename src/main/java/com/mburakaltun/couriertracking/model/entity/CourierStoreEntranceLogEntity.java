@@ -25,6 +25,9 @@ public class CourierStoreEntranceLogEntity {
     @Column(name = "entered_at", nullable = false)
     private LocalDateTime enteredAt;
 
+    @Column(name = "last_recorded_at", nullable = false)
+    private LocalDateTime lastRecordedAt;
+
     @Column(name = "courier_id", nullable = false)
     private Long courierId;
 

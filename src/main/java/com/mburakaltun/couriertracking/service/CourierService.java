@@ -1,115 +1,171 @@
 package com.mburakaltun.couriertracking.service;
 
+import com.mburakaltun.couriertracking.common.properties.AppProperties;
+import com.mburakaltun.couriertracking.model.entity.CourierEntity;
 import com.mburakaltun.couriertracking.model.entity.CourierLocationEntity;
 import com.mburakaltun.couriertracking.model.entity.CourierStoreEntranceLogEntity;
 import com.mburakaltun.couriertracking.model.entity.StoreEntity;
-import com.mburakaltun.couriertracking.model.request.RequestCourierLocation;
-import com.mburakaltun.couriertracking.model.request.RequestCourierTotalDistance;
-import com.mburakaltun.couriertracking.model.response.ResponseCourierLocation;
-import com.mburakaltun.couriertracking.model.response.ResponseCourierTotalDistance;
+import com.mburakaltun.couriertracking.model.request.RequestLogCourierLocation;
+import com.mburakaltun.couriertracking.model.request.RequestQueryCourierTotalDistance;
+import com.mburakaltun.couriertracking.model.request.RequestCreateCourier;
+import com.mburakaltun.couriertracking.model.response.ResponseLogCourierLocation;
+import com.mburakaltun.couriertracking.model.response.ResponseQueryCourierTotalDistance;
+import com.mburakaltun.couriertracking.model.response.ResponseCreateCourier;
+import com.mburakaltun.couriertracking.repository.CourierJpaRepository;
 import com.mburakaltun.couriertracking.repository.CourierLocationJpaRepository;
 import com.mburakaltun.couriertracking.repository.CourierStoreEntranceLogJpaRepository;
 import com.mburakaltun.couriertracking.repository.StoreJpaRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @RequiredArgsConstructor
 @Service
 public class CourierService {
 
-    private final static int EARTH_RADIUS = 6371;
-    private final static double DISTANCE_THRESHOLD = 0.1; // Distance threshold in kilometers
-
+    private final AppProperties appProperties;
+    private final CourierJpaRepository courierJpaRepository;
     private final StoreJpaRepository storeJpaRepository;
     private final CourierLocationJpaRepository courierLocationJpaRepository;
     private final CourierStoreEntranceLogJpaRepository courierStoreEntranceLogJpaRepository;
 
-    public ResponseCourierLocation logCourierLocation(RequestCourierLocation requestCourierLocation) {
-        saveCourierLocation(requestCourierLocation);
-        saveCourierStoreEntrance(requestCourierLocation);
+    public ResponseCreateCourier createCourier(RequestCreateCourier requestCourierLocation) {
+        CourierEntity courierEntity = new CourierEntity();
+        courierEntity.setName(requestCourierLocation.getName());
+        courierEntity.setTotalDistance(0.0);
+        CourierEntity savedCourier = courierJpaRepository.save(courierEntity);
 
-        return ResponseCourierLocation.builder()
+        return ResponseCreateCourier.builder()
+                .id(savedCourier.getId())
                 .build();
     }
 
-    public ResponseCourierTotalDistance calculateTotalDistance(RequestCourierTotalDistance requestCourierTotalDistance) {
-        List<CourierLocationEntity> courierLocationEntities = courierLocationJpaRepository.findByCourierIdOrderByRecordedAtDesc(requestCourierTotalDistance.getCourierId());
+    public ResponseLogCourierLocation logCourierLocation(RequestLogCourierLocation requestLogCourierLocation) {
+        String threadName = Thread.currentThread().getName();
+        log.info("logCourierLocation executing in thread: {}", threadName);
 
-        if (courierLocationEntities.size() < 2) {
-            return ResponseCourierTotalDistance.builder()
-                    .totalDistance(0.0)
-                    .build();
-        }
+        validateCourier(requestLogCourierLocation.getCourierId());
+        saveCourierLocation(requestLogCourierLocation);
+        saveCourierStoreEntrance(requestLogCourierLocation);
+        updateCourierDistance(requestLogCourierLocation);
 
-        double totalDistance = 0.0;
-
-        for (int i = 0; i < courierLocationEntities.size() - 1; i++) {
-            CourierLocationEntity currentLocation = courierLocationEntities.get(i);
-            CourierLocationEntity nextLocation = courierLocationEntities.get(i + 1);
-            double distance = calculateDistance(currentLocation.getLatitude(), currentLocation.getLongitude(), nextLocation.getLatitude(), nextLocation.getLongitude());
-            totalDistance += distance;
-        }
-
-        return ResponseCourierTotalDistance.builder()
-                .totalDistance(totalDistance)
+        return ResponseLogCourierLocation.builder()
+                .success(true)
                 .build();
     }
 
-    private double calculateDistance(Double fromLatitude, Double fromLongitude, Double toLatitude, Double toLongitude) {
+    public ResponseQueryCourierTotalDistance queryTotalDistance(RequestQueryCourierTotalDistance requestQueryCourierTotalDistance) {
+        validateCourier(requestQueryCourierTotalDistance.getCourierId());
+        Optional<CourierEntity> courierEntityOptional = courierJpaRepository.findById(requestQueryCourierTotalDistance.getCourierId());
+        Double totalDistance = courierEntityOptional.map(CourierEntity::getTotalDistance).orElse(null);
+
+        return ResponseQueryCourierTotalDistance.builder()
+                .totalDistanceInMeters(totalDistance)
+                .build();
+    }
+
+    private void updateCourierDistance(RequestLogCourierLocation requestLogCourierLocation) {
+        String threadName = Thread.currentThread().getName();
+        log.info("updateCourierDistance executing in thread: {}", threadName);
+
+        Long courierId = requestLogCourierLocation.getCourierId();
+        Double latitude = requestLogCourierLocation.getLatitude();
+        Double longitude = requestLogCourierLocation.getLongitude();
+
+        Optional<CourierEntity> courierEntityOptional = courierJpaRepository.findById(courierId);
+        if (courierEntityOptional.isPresent()) {
+            CourierEntity courierEntity = courierEntityOptional.get();
+            List<CourierLocationEntity> courierLocations = courierLocationJpaRepository.findByCourierIdOrderByRecordedAtDesc(courierId);
+
+            if (!courierLocations.isEmpty()) {
+                CourierLocationEntity lastLocation = courierLocations.get(0);
+                double distance = calculateDistanceInMeters(lastLocation.getLatitude(), lastLocation.getLongitude(), latitude, longitude);
+                log.info("Courier ID: {}, Distance from last location: {} meters", courierId, distance);
+                courierEntity.setTotalDistance(courierEntity.getTotalDistance() + distance);
+            }
+
+            courierJpaRepository.save(courierEntity);
+        }
+    }
+
+    private void validateCourier(Long courierId) {
+        if (courierId == null || !courierJpaRepository.existsById(courierId)) {
+            throw new IllegalArgumentException("Courier with ID " + courierId + " does not exist.");
+        }
+    }
+
+    private double calculateDistanceInMeters(Double fromLatitude, Double fromLongitude, Double toLatitude, Double toLongitude) {
         double latitudeDistance = Math.toRadians(toLatitude - fromLatitude);
         double longitudeDistance = Math.toRadians(toLongitude - fromLongitude);
         double a = Math.sin(latitudeDistance / 2) * Math.sin(latitudeDistance / 2) +
                 Math.cos(Math.toRadians(fromLatitude)) * Math.cos(Math.toRadians(toLatitude)) *
                 Math.sin(longitudeDistance / 2) * Math.sin(longitudeDistance / 2);
         double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return EARTH_RADIUS * c;
+        return appProperties.getEarthRadiusInKilometers() * c * 1000;
     }
 
-    private void saveCourierLocation(RequestCourierLocation requestCourierLocation) {
+    private void saveCourierLocation(RequestLogCourierLocation requestLogCourierLocation) {
         CourierLocationEntity courierLocationEntity = new CourierLocationEntity();
-        courierLocationEntity.setCourierId(requestCourierLocation.getCourierId());
-        courierLocationEntity.setRecordedAt(requestCourierLocation.getRecordedAt());
-        courierLocationEntity.setLatitude(requestCourierLocation.getLatitude());
-        courierLocationEntity.setLongitude(requestCourierLocation.getLongitude());
+        courierLocationEntity.setCourierId(requestLogCourierLocation.getCourierId());
+        courierLocationEntity.setRecordedAt(requestLogCourierLocation.getRecordedAt());
+        courierLocationEntity.setLatitude(requestLogCourierLocation.getLatitude());
+        courierLocationEntity.setLongitude(requestLogCourierLocation.getLongitude());
         courierLocationJpaRepository.save(courierLocationEntity);
     }
 
-    private void saveCourierStoreEntrance(RequestCourierLocation requestCourierLocation) {
+    private void saveCourierStoreEntrance(RequestLogCourierLocation requestLogCourierLocation) {
+        Long courierId = requestLogCourierLocation.getCourierId();
+        Double courierLatitude = requestLogCourierLocation.getLatitude();
+        Double courierLongitude = requestLogCourierLocation.getLongitude();
+
         List<StoreEntity> storeEntityList = storeJpaRepository.findAll();
         for (StoreEntity storeEntity : storeEntityList) {
-            Double courierLatitude = requestCourierLocation.getLatitude();
-            Double courierLongitude = requestCourierLocation.getLongitude();
+            Long storeId = storeEntity.getId();
+            String storeName = storeEntity.getName();
             Double storeLatitude = storeEntity.getLatitude();
             Double storeLongitude = storeEntity.getLongitude();
 
-            if (isEnteredStoreArea(courierLatitude, courierLongitude, storeLatitude, storeLongitude) && isCourierAtStoreInOneMinute(requestCourierLocation.getCourierId(), storeEntity.getId())) {
+            if (isEnteredStoreArea(courierLatitude, courierLongitude, storeLatitude, storeLongitude, storeName) && !isCourierAtStoreAreaWithinTimeThreshold(courierId, storeId)) {
                 CourierStoreEntranceLogEntity courierStoreEntranceLogEntity = new CourierStoreEntranceLogEntity();
-                courierStoreEntranceLogEntity.setCourierId(requestCourierLocation.getCourierId());
+                courierStoreEntranceLogEntity.setCourierId(requestLogCourierLocation.getCourierId());
                 courierStoreEntranceLogEntity.setStoreId(storeEntity.getId());
                 courierStoreEntranceLogEntity.setEnteredAt(LocalDateTime.now());
+                courierStoreEntranceLogEntity.setLastRecordedAt(LocalDateTime.now());
                 courierStoreEntranceLogJpaRepository.save(courierStoreEntranceLogEntity);
             }
         }
     }
 
-    private boolean isEnteredStoreArea(Double courierLatitude, Double courierLongitude, Double storeLatitude, Double storeLongitude) {
-        double distance = calculateDistance(courierLatitude, courierLongitude, storeLatitude, storeLongitude);
-        return distance <= DISTANCE_THRESHOLD;
+    private boolean isEnteredStoreArea(Double courierLatitude, Double courierLongitude, Double storeLatitude, Double storeLongitude, String storeName) {
+        double distance = calculateDistanceInMeters(courierLatitude, courierLongitude, storeLatitude, storeLongitude);
+        log.info("Courier is {} meters away from store {}", distance, storeName);
+        return distance <= appProperties.getDistanceThresholdInMeters();
     }
 
-    private boolean isCourierAtStoreInOneMinute(Long courierId, Long storeId) {
-        Optional<CourierStoreEntranceLogEntity> courierStoreEntranceLogEntityOptional = courierStoreEntranceLogJpaRepository.findByCourierIdAndStoreIdOrderByEnteredAtDesc(courierId, storeId);
-        if (courierStoreEntranceLogEntityOptional.isPresent()) {
-            CourierStoreEntranceLogEntity courierStoreEntranceLogEntity = courierStoreEntranceLogEntityOptional.get();
-            if (courierStoreEntranceLogEntity.getEnteredAt().isAfter(LocalDateTime.now().minusMinutes(1))) {
-                courierStoreEntranceLogEntity.setEnteredAt(LocalDateTime.now());
-                return true;
-            }
+    private boolean isCourierAtStoreAreaWithinTimeThreshold(Long courierId, Long storeId) {
+        List<CourierStoreEntranceLogEntity> entranceLogs = courierStoreEntranceLogJpaRepository.findByCourierIdAndStoreIdOrderByEnteredAtDesc(courierId, storeId);
+
+        if (CollectionUtils.isEmpty(entranceLogs)) {
+            return false;
         }
-        return false;
+
+        CourierStoreEntranceLogEntity courierStoreEntranceLogEntity = entranceLogs.get(0);
+        double secondsSinceLastEntrance = Duration.between(courierStoreEntranceLogEntity.getLastRecordedAt(), LocalDateTime.now()).getSeconds();
+        log.info("Courier ID: {}, Store ID: {}, Seconds since last record: {}", courierId, storeId, secondsSinceLastEntrance);
+
+        if (secondsSinceLastEntrance > appProperties.getTimeThresholdInSeconds()) {
+            return false;
+        }
+
+        courierStoreEntranceLogEntity.setLastRecordedAt(LocalDateTime.now());
+        courierStoreEntranceLogJpaRepository.save(courierStoreEntranceLogEntity);
+        return true;
     }
 }

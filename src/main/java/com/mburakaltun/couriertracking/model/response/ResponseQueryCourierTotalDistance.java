@@ -9,6 +9,6 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ResponseCourierTotalDistance {
-    private Double totalDistance;
+public class ResponseQueryCourierTotalDistance {
+    private Double totalDistanceInMeters;
 }
