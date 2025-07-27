@@ -1,7 +1,10 @@
 package com.mburakaltun.couriertracking.common.config;
 
+import com.mburakaltun.couriertracking.model.entity.CourierEntity;
 import com.mburakaltun.couriertracking.model.entity.StoreEntity;
+import com.mburakaltun.couriertracking.repository.CourierJpaRepository;
 import com.mburakaltun.couriertracking.repository.StoreJpaRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,11 +12,12 @@ import org.springframework.context.annotation.Configuration;
 import java.util.Arrays;
 import java.util.List;
 
+@Slf4j
 @Configuration
 public class DataInitializerConfig {
 
     @Bean
-    public CommandLineRunner initializeStoreData(StoreJpaRepository storeJpaRepository) {
+    public CommandLineRunner initializeStoreData(StoreJpaRepository storeJpaRepository, CourierJpaRepository courierJpaRepository) {
         return args -> {
             if (storeJpaRepository.count() == 0) {
                 List<StoreEntity> stores = Arrays.asList(
@@ -26,7 +30,16 @@ public class DataInitializerConfig {
 
                 storeJpaRepository.saveAll(stores);
 
-                System.out.println("Store data initialized successfully!");
+                log.info("Store data initialized successfully!");
+            }
+
+            if (courierJpaRepository.count() == 0) {
+                CourierEntity courierEntity = new CourierEntity();
+                courierEntity.setName("Default Courier");
+                courierEntity.setTotalDistance(0.0);
+                courierJpaRepository.save(courierEntity);
+
+                log.info("Courier data initialized successfully!");
             }
         };
     }

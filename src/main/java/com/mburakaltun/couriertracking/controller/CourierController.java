@@ -2,10 +2,8 @@ package com.mburakaltun.couriertracking.controller;
 
 import com.mburakaltun.couriertracking.model.request.RequestLogCourierLocation;
 import com.mburakaltun.couriertracking.model.request.RequestQueryCourierTotalDistance;
-import com.mburakaltun.couriertracking.model.request.RequestCreateCourier;
 import com.mburakaltun.couriertracking.model.response.ResponseLogCourierLocation;
 import com.mburakaltun.couriertracking.model.response.ResponseQueryCourierTotalDistance;
-import com.mburakaltun.couriertracking.model.response.ResponseCreateCourier;
 import com.mburakaltun.couriertracking.service.CourierService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -26,12 +24,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class CourierController {
 
     private final CourierService courierService;
-
-    @PostMapping("/create")
-    public ResponseEntity<ResponseCreateCourier> createCourier(@RequestBody @Valid RequestCreateCourier requestCourierLocation) {
-        ResponseCreateCourier responseCreateCourier = courierService.createCourier(requestCourierLocation);
-        return new ResponseEntity<>(responseCreateCourier, HttpStatus.CREATED);
-    }
 
     @PostMapping("/log-courier-location")
     public ResponseEntity<ResponseLogCourierLocation> logCourierLocation(@RequestBody @Valid RequestLogCourierLocation requestLogCourierLocation) {

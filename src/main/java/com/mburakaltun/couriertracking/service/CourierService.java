@@ -3,25 +3,18 @@ package com.mburakaltun.couriertracking.service;
 import com.mburakaltun.couriertracking.common.properties.AppProperties;
 import com.mburakaltun.couriertracking.model.entity.CourierEntity;
 import com.mburakaltun.couriertracking.model.entity.CourierLocationEntity;
-import com.mburakaltun.couriertracking.model.entity.CourierStoreEntranceLogEntity;
 import com.mburakaltun.couriertracking.model.entity.StoreEntity;
 import com.mburakaltun.couriertracking.model.request.RequestLogCourierLocation;
 import com.mburakaltun.couriertracking.model.request.RequestQueryCourierTotalDistance;
-import com.mburakaltun.couriertracking.model.request.RequestCreateCourier;
 import com.mburakaltun.couriertracking.model.response.ResponseLogCourierLocation;
 import com.mburakaltun.couriertracking.model.response.ResponseQueryCourierTotalDistance;
-import com.mburakaltun.couriertracking.model.response.ResponseCreateCourier;
 import com.mburakaltun.couriertracking.repository.CourierJpaRepository;
 import com.mburakaltun.couriertracking.repository.CourierLocationJpaRepository;
-import com.mburakaltun.couriertracking.repository.CourierStoreEntranceLogJpaRepository;
 import com.mburakaltun.couriertracking.repository.StoreJpaRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.util.CollectionUtils;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -34,27 +27,14 @@ public class CourierService {
     private final CourierJpaRepository courierJpaRepository;
     private final StoreJpaRepository storeJpaRepository;
     private final CourierLocationJpaRepository courierLocationJpaRepository;
-    private final CourierStoreEntranceLogJpaRepository courierStoreEntranceLogJpaRepository;
-
-    public ResponseCreateCourier createCourier(RequestCreateCourier requestCourierLocation) {
-        CourierEntity courierEntity = new CourierEntity();
-        courierEntity.setName(requestCourierLocation.getName());
-        courierEntity.setTotalDistance(0.0);
-        CourierEntity savedCourier = courierJpaRepository.save(courierEntity);
-
-        return ResponseCreateCourier.builder()
-                .id(savedCourier.getId())
-                .build();
-    }
+    private final DistanceCalculator distanceCalculator;
+    private final CourierStoreEntranceLogService courierStoreEntranceLogService;
 
     public ResponseLogCourierLocation logCourierLocation(RequestLogCourierLocation requestLogCourierLocation) {
-        String threadName = Thread.currentThread().getName();
-        log.info("logCourierLocation executing in thread: {}", threadName);
-
-        validateCourier(requestLogCourierLocation.getCourierId());
-        saveCourierLocation(requestLogCourierLocation);
-        saveCourierStoreEntrance(requestLogCourierLocation);
-        updateCourierDistance(requestLogCourierLocation);
+        validateCourierExists(requestLogCourierLocation.getCourierId());
+        calculateAndUpdateCourierTotalDistance(requestLogCourierLocation);
+        persistCourierLocation(requestLogCourierLocation);
+        checkAndLogStoreEntrances(requestLogCourierLocation);
 
         return ResponseLogCourierLocation.builder()
                 .success(true)
@@ -62,7 +42,7 @@ public class CourierService {
     }
 
     public ResponseQueryCourierTotalDistance queryTotalDistance(RequestQueryCourierTotalDistance requestQueryCourierTotalDistance) {
-        validateCourier(requestQueryCourierTotalDistance.getCourierId());
+        validateCourierExists(requestQueryCourierTotalDistance.getCourierId());
         Optional<CourierEntity> courierEntityOptional = courierJpaRepository.findById(requestQueryCourierTotalDistance.getCourierId());
         Double totalDistance = courierEntityOptional.map(CourierEntity::getTotalDistance).orElse(null);
 
@@ -71,9 +51,9 @@ public class CourierService {
                 .build();
     }
 
-    private void updateCourierDistance(RequestLogCourierLocation requestLogCourierLocation) {
+    private void calculateAndUpdateCourierTotalDistance(RequestLogCourierLocation requestLogCourierLocation) {
         String threadName = Thread.currentThread().getName();
-        log.info("updateCourierDistance executing in thread: {}", threadName);
+        log.info("calculateAndUpdateCourierTotalDistance executing in thread: {}", threadName);
 
         Long courierId = requestLogCourierLocation.getCourierId();
         Double latitude = requestLogCourierLocation.getLatitude();
@@ -86,7 +66,7 @@ public class CourierService {
 
             if (!courierLocations.isEmpty()) {
                 CourierLocationEntity lastLocation = courierLocations.get(0);
-                double distance = calculateDistanceInMeters(lastLocation.getLatitude(), lastLocation.getLongitude(), latitude, longitude);
+                double distance = distanceCalculator.calculateDistanceInMeters(lastLocation.getLatitude(), lastLocation.getLongitude(), latitude, longitude);
                 log.info("Courier ID: {}, Distance from last location: {} meters", courierId, distance);
                 courierEntity.setTotalDistance(courierEntity.getTotalDistance() + distance);
             }
@@ -95,23 +75,13 @@ public class CourierService {
         }
     }
 
-    private void validateCourier(Long courierId) {
+    private void validateCourierExists(Long courierId) {
         if (courierId == null || !courierJpaRepository.existsById(courierId)) {
             throw new IllegalArgumentException("Courier with ID " + courierId + " does not exist.");
         }
     }
 
-    private double calculateDistanceInMeters(Double fromLatitude, Double fromLongitude, Double toLatitude, Double toLongitude) {
-        double latitudeDistance = Math.toRadians(toLatitude - fromLatitude);
-        double longitudeDistance = Math.toRadians(toLongitude - fromLongitude);
-        double a = Math.sin(latitudeDistance / 2) * Math.sin(latitudeDistance / 2) +
-                Math.cos(Math.toRadians(fromLatitude)) * Math.cos(Math.toRadians(toLatitude)) *
-                Math.sin(longitudeDistance / 2) * Math.sin(longitudeDistance / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return appProperties.getEarthRadiusInKilometers() * c * 1000;
-    }
-
-    private void saveCourierLocation(RequestLogCourierLocation requestLogCourierLocation) {
+    private void persistCourierLocation(RequestLogCourierLocation requestLogCourierLocation) {
         CourierLocationEntity courierLocationEntity = new CourierLocationEntity();
         courierLocationEntity.setCourierId(requestLogCourierLocation.getCourierId());
         courierLocationEntity.setRecordedAt(requestLogCourierLocation.getRecordedAt());
@@ -120,7 +90,7 @@ public class CourierService {
         courierLocationJpaRepository.save(courierLocationEntity);
     }
 
-    private void saveCourierStoreEntrance(RequestLogCourierLocation requestLogCourierLocation) {
+    private void checkAndLogStoreEntrances(RequestLogCourierLocation requestLogCourierLocation) {
         Long courierId = requestLogCourierLocation.getCourierId();
         Double courierLatitude = requestLogCourierLocation.getLatitude();
         Double courierLongitude = requestLogCourierLocation.getLongitude();
@@ -132,40 +102,16 @@ public class CourierService {
             Double storeLatitude = storeEntity.getLatitude();
             Double storeLongitude = storeEntity.getLongitude();
 
-            if (isEnteredStoreArea(courierLatitude, courierLongitude, storeLatitude, storeLongitude, storeName) && !isCourierAtStoreAreaWithinTimeThreshold(courierId, storeId)) {
-                CourierStoreEntranceLogEntity courierStoreEntranceLogEntity = new CourierStoreEntranceLogEntity();
-                courierStoreEntranceLogEntity.setCourierId(requestLogCourierLocation.getCourierId());
-                courierStoreEntranceLogEntity.setStoreId(storeEntity.getId());
-                courierStoreEntranceLogEntity.setEnteredAt(LocalDateTime.now());
-                courierStoreEntranceLogEntity.setLastRecordedAt(LocalDateTime.now());
-                courierStoreEntranceLogJpaRepository.save(courierStoreEntranceLogEntity);
+            if (isCourierWithinStoreRadius(courierLatitude, courierLongitude, storeLatitude, storeLongitude, storeName)
+                    && !courierStoreEntranceLogService.hasRecentStoreEntranceRecord(courierId, storeId)) {
+                courierStoreEntranceLogService.createStoreEntranceLog(requestLogCourierLocation.getCourierId(), storeEntity.getId());
             }
         }
     }
 
-    private boolean isEnteredStoreArea(Double courierLatitude, Double courierLongitude, Double storeLatitude, Double storeLongitude, String storeName) {
-        double distance = calculateDistanceInMeters(courierLatitude, courierLongitude, storeLatitude, storeLongitude);
+    private boolean isCourierWithinStoreRadius(Double courierLatitude, Double courierLongitude, Double storeLatitude, Double storeLongitude, String storeName) {
+        double distance = distanceCalculator.calculateDistanceInMeters(courierLatitude, courierLongitude, storeLatitude, storeLongitude);
         log.info("Courier is {} meters away from store {}", distance, storeName);
         return distance <= appProperties.getDistanceThresholdInMeters();
-    }
-
-    private boolean isCourierAtStoreAreaWithinTimeThreshold(Long courierId, Long storeId) {
-        List<CourierStoreEntranceLogEntity> entranceLogs = courierStoreEntranceLogJpaRepository.findByCourierIdAndStoreIdOrderByEnteredAtDesc(courierId, storeId);
-
-        if (CollectionUtils.isEmpty(entranceLogs)) {
-            return false;
-        }
-
-        CourierStoreEntranceLogEntity courierStoreEntranceLogEntity = entranceLogs.get(0);
-        double secondsSinceLastEntrance = Duration.between(courierStoreEntranceLogEntity.getLastRecordedAt(), LocalDateTime.now()).getSeconds();
-        log.info("Courier ID: {}, Store ID: {}, Seconds since last record: {}", courierId, storeId, secondsSinceLastEntrance);
-
-        if (secondsSinceLastEntrance > appProperties.getTimeThresholdInSeconds()) {
-            return false;
-        }
-
-        courierStoreEntranceLogEntity.setLastRecordedAt(LocalDateTime.now());
-        courierStoreEntranceLogJpaRepository.save(courierStoreEntranceLogEntity);
-        return true;
     }
 }
