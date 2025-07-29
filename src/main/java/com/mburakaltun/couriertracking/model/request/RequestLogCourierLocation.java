@@ -23,12 +23,12 @@ public class RequestLogCourierLocation {
     @PastOrPresent(message = "{validation.recordedAt.pastOrPresent}")
     private LocalDateTime recordedAt;
 
-    @NotNull
+    @NotNull(message = "{validation.latitude.notNull}")
     @DecimalMin(value = "-90.0", message = "{validation.latitude.min}")
     @DecimalMax(value = "90.0", message = "{validation.latitude.max}")
     private Double latitude;
 
-    @NotNull
+    @NotNull(message = "{validation.longitude.notNull}")
     @DecimalMin(value = "-180.0", message = "{validation.longitude.min}")
     @DecimalMax(value = "180.0", message = "{validation.longitude.max}")
     private Double longitude;

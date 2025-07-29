@@ -70,6 +70,8 @@ mvn spring-boot:run
 
 The application will start on `http://localhost:8080`.
 
+---
+
 ## 📜 API Documentation
 
 Log Courier Location
@@ -111,12 +113,34 @@ Using curl:
 curl -X GET "http://localhost:8080/couriers/query-total-distance?courierId=1"
 ```
 
+---
+
 ## 🗃️ Preloaded Data
 
 Upon application startup, the following Migros store locations are preloaded:
 
 5 Migros stores are automatically loaded from stores.json equivalent.
 1 default courier is inserted for quick testing (ID: 1).
+
+--- 
+
+## 🌐 Language Support
+
+The API supports **English** (default) and **Turkish**.  
+You can switch the response language using the `Accept-Language` HTTP header.
+
+#### ✅ Supported Values:
+- `en` → English (default)
+- `tr` → Turkish
+
+#### 📌 Example Usage with `curl`:
+
+**Request in Turkish:**
+```bash
+curl -X GET "http://localhost:8080/couriers/query-total-distance?courierId=1" -H "Accept-Language: tr"
+```
+
+---
 
 ## 🧪 H2 Database Console
 
@@ -125,6 +149,8 @@ You can access the H2 database console at:
 ```
 http://localhost:8080/h2-console
 ```
+
+---
 
 ## 🧾 Sample Configuration (application.yml)
 
@@ -154,6 +180,8 @@ app:
   distance-threshold-in-meters: 100
   time-threshold-in-seconds: 60
 ```
+
+---
 
 ## 📄 License
 
