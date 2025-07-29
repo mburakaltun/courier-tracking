@@ -7,7 +7,6 @@ import com.mburakaltun.couriertracking.model.response.ResponseQueryCourierTotalD
 import com.mburakaltun.couriertracking.service.CourierService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,10 +16,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-@Slf4j
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("/couriers")
+@RequestMapping("/api/couriers")
 public class CourierController {
 
     private final CourierService courierService;
@@ -28,7 +26,6 @@ public class CourierController {
     @PostMapping("/log-courier-location")
     public ResponseEntity<ResponseLogCourierLocation> logCourierLocation(@RequestBody @Valid RequestLogCourierLocation requestLogCourierLocation) {
         ResponseLogCourierLocation responseLogCourierLocation = courierService.logCourierLocation(requestLogCourierLocation);
-        log.info("\n");
         return new ResponseEntity<>(responseLogCourierLocation, HttpStatus.CREATED);
     }
 
